@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Config Backup Browser</title>
+<style>
+:root{
+  --bg:#f2f5f9; --panel:#ffffff; --border:#d8e0ea; --text:#1c2733; --muted:#64748b;
+  --accent:#2563eb; --accent-soft:#e8effd; --mark:#fde047; --active:#fb923c;
+  --mono:ui-monospace,SFMono-Regular,"Consolas","Menlo",monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font:14px/1.5 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
+button{font:inherit;cursor:pointer}
+
+header{
+  background:var(--panel);border-bottom:1px solid var(--border);
+  padding:10px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  position:sticky;top:0;z-index:20;
+}
+header h1{font-size:16px;margin:0;white-space:nowrap}
+header h1 span{color:var(--accent)}
+.btn{
+  border:1px solid var(--border);background:var(--panel);border-radius:6px;
+  padding:6px 12px;color:var(--text);
+}
+.btn:hover{background:var(--accent-soft);border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{opacity:.9;background:var(--accent)}
+.btn.small{padding:3px 9px;font-size:12px}
+.spacer{flex:1}
+
+#searchWrap{display:flex;align-items:center;gap:8px;flex:1;min-width:280px;max-width:640px}
+#searchBox{
+  flex:1;border:1px solid var(--border);border-radius:6px;padding:7px 12px;
+  font-size:14px;outline:none;background:#fbfcfe;
+}
+#searchBox:focus{border-color:var(--accent);background:#fff}
+label.toggle{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);white-space:nowrap;user-select:none}
+
+#statsBar{
+  padding:8px 18px;font-size:12.5px;color:var(--muted);
+  border-bottom:1px solid var(--border);background:#fafbfd;
+}
+#statsBar b{color:var(--text)}
+
+main{padding:16px 18px 60px;max-width:1200px;margin:0 auto}
+
+.empty{
+  background:var(--panel);border:1px dashed var(--border);border-radius:10px;
+  padding:48px 24px;text-align:center;color:var(--muted);
+}
+.empty .big{font-size:40px;margin-bottom:10px}
+.empty kbd{background:#eef2f7;border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:12px}
+
+.group{margin-bottom:18px}
+.group>summary{
+  cursor:pointer;font-weight:600;padding:8px 10px;background:var(--panel);
+  border:1px solid var(--border);border-radius:8px;list-style:none;display:flex;align-items:center;gap:8px;
+}
+.group>summary::-webkit-details-marker{display:none}
+.group>summary .chev{transition:transform .15s;display:inline-block}
+.group[open]>summary .chev{transform:rotate(90deg)}
+.group-body{margin-top:8px;display:grid;gap:8px}
+
+.device-card{
+  background:var(--panel);border:1px solid var(--border);border-radius:8px;
+  padding:10px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;
+}
+.device-card:hover{border-color:var(--accent);box-shadow:0 1px 4px rgba(37,99,235,.12)}
+.device-card .dname{font-weight:600;font-size:14px}
+.device-card .dpath{font-size:12px;color:var(--muted);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.device-card .dmeta{font-size:12px;color:var(--muted);white-space:nowrap}
+.badge{
+  font-size:11.5px;font-weight:600;border-radius:10px;padding:2px 9px;white-space:nowrap;
+  background:var(--accent-soft);color:var(--accent);
+}
+.badge.warn{background:#fef3c7;color:#b45309}
+.chip{
+  font-size:11px;font-weight:600;border-radius:4px;padding:1px 7px;white-space:nowrap;
+  background:#eef2f7;color:var(--muted);border:1px solid var(--border);
+}
+
+.snippets{margin-top:8px;display:grid;gap:4px}
+.snippet{
+  font-family:var(--mono);font-size:12px;background:#f8fafc;border:1px solid var(--border);
+  border-radius:5px;padding:4px 8px;white-space:pre;overflow:hidden;text-overflow:ellipsis;
+  color:#334155;cursor:pointer;
+}
+.snippet:hover{border-color:var(--accent);background:var(--accent-soft)}
+.snippet .lnum{color:#94a3b8;margin-right:8px}
+mark{background:var(--mark);color:#111;border-radius:2px;padding:0 1px}
+mark.active{background:var(--active);color:#fff;outline:2px solid #c2410c}
+
+/* device view */
+#deviceView .dv-head{
+  background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  position:sticky;top:57px;z-index:10;
+}
+#deviceView .dv-title{font-weight:700;font-size:16px}
+#deviceView .dv-sub{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.matchnav{display:flex;align-items:center;gap:6px}
+.matchnav .counter{font-size:12.5px;color:var(--muted);min-width:96px;text-align:center}
+.config{
+  background:#0f172a;color:#e2e8f0;border-radius:10px;border:1px solid #1e293b;
+  font-family:var(--mono);font-size:12.5px;line-height:1.55;
+  padding:12px 0;overflow:auto;max-height:calc(100vh - 210px);
+}
+.cl{display:flex;white-space:pre}
+.cl:hover{background:#1e293b}
+.cl .ln{
+  flex:0 0 58px;text-align:right;padding-right:12px;color:#475569;user-select:none;
+}
+.cl .lc{flex:1;padding-right:16px}
+.config mark{background:#facc15;color:#0f172a}
+.config mark.active{background:#fb923c;color:#0f172a;outline:1px solid #ea580c}
+
+#dropOverlay{
+  position:fixed;inset:0;background:rgba(37,99,235,.12);border:4px dashed var(--accent);
+  display:none;align-items:center;justify-content:center;font-size:22px;font-weight:700;
+  color:var(--accent);z-index:100;pointer-events:none;backdrop-filter:blur(1px);
+}
+#dropOverlay.show{display:flex}
+#loading{position:fixed;bottom:16px;right:16px;background:var(--panel);border:1px solid var(--border);
+  border-radius:8px;padding:8px 14px;box-shadow:0 2px 8px rgba(0,0,0,.12);display:none;z-index:50}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚙️ Config <span>Backup Browser</span></h1>
+  <div id="searchWrap">
+    <input id="searchBox" type="search" placeholder="Search keyword in all configurations…" autocomplete="off" spellcheck="false">
+  </div>
+  <label class="toggle"><input type="checkbox" id="caseToggle"> Aa</label>
+  <label class="toggle"><input type="checkbox" id="regexToggle"> .* regex</label>
+  <div class="spacer"></div>
+  <button class="btn primary" id="pickFiles">📁 Add files</button>
+  <button class="btn primary" id="pickFolder">🗂️ Add folder</button>
+  <button class="btn" id="clearAll">✖ Clear</button>
+  <input type="file" id="fileInput" multiple hidden>
+  <input type="file" id="folderInput" webkitdirectory directory multiple hidden>
+</header>
+
+<div id="statsBar">No configurations loaded.</div>
+
+<main>
+  <div id="listView"></div>
+
+  <div id="deviceView" hidden>
+    <div class="dv-head">
+      <button class="btn small" id="backBtn">← All devices</button>
+      <div>
+        <div class="dv-title" id="dvName"></div>
+        <div class="dv-sub" id="dvSub"></div>
+      </div>
+      <div class="spacer"></div>
+      <div class="matchnav" id="matchNav" hidden>
+        <button class="btn small" id="prevBtn">▲ Prev</button>
+        <span class="counter" id="matchCounter"></span>
+        <button class="btn small" id="nextBtn">▼ Next</button>
+      </div>
+    </div>
+    <div class="config" id="configEl"></div>
+  </div>
+</main>
+
+<div id="dropOverlay"><div>⬇ Drop configuration files or folders here</div></div>
+<div id="loading">Loading…</div>
+
+<script>
+'use strict';
+
+/* ---------------- state ---------------- */
+const devices = [];
+let nextId = 1;
+let activeQuery = '';
+let searchResults = null;   // Map deviceId -> {matches:[{line,col,len,idx}], nameMatch, capped}
+let view = 'list';          // 'list' | 'device'
+let currentDevice = null;   // device object shown in device view
+let currentMatchIdx = -1;   // index within current device's matches
+let currentMatches = [];    // matches array for current device
+let skippedFiles = [];
+
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/* ---------------- loading files ---------------- */
+function isProbablyBinary(text){
+  const head = text.slice(0, 2000);
+  return head.indexOf('\u0000') !== -1;
+}
+
+function stripExt(name){
+  return name.replace(/\.(cfg|conf|config|txt|log|running|startup|bak|out)$/i, '');
+}
+
+function parseHostname(content, filename){
+  const patterns = [
+    /^set system host-name\s+(\S+)/im,   // Juniper set-style
+    /^\s*host-name\s+(\S+?)\s*;/im,      // Juniper hierarchy-style (indented)
+    /^\s*(?:hostname|switchname|sysname)\s+(\S+)/im, // Cisco / Huawei / HP
+    /^set hostname\s+"?([^"\n]+)"?/im    // Fortinet
+  ];
+  for (const re of patterns){
+    const m = content.match(re);
+    if (m && m[1]) return m[1].replace(/["']/g, '');
+  }
+  return stripExt(filename);
+}
+
+function detectVendor(content){
+  if (/host-name\s|set system|^version\s+"/im.test(content) || /JUNOS/i.test(content)) return 'Juniper';
+  if (/^sysname\s/im.test(content)) return 'Huawei';
+  if (/config system global|fortigate/i.test(content)) return 'Fortinet';
+  if (/^set deviceconfig|panos/i.test(content)) return 'Palo Alto';
+  if (/^ASA Version/i.test(content)) return 'Cisco ASA';
+  if (/^;\s+\S+ Configuration/i.test(content) || /arubaos/i.test(content)) return 'Aruba/HP';
+  if (/^version \d/i.test(content) || /^!|^interface /im.test(content)) return 'Cisco IOS';
+  return 'Generic';
+}
+
+function makeDevice(text, relativePath){
+  const segs = relativePath.split('/');
+  const filename = segs[segs.length - 1];
+  const folder = segs.slice(0, -1).join('/');
+  const lines = text.split(/\r\n|\r|\n/);
+  const name = parseHostname(text, filename);
+  return {
+    id: nextId++,
+    name,
+    folder,
+    filename,
+    path: relativePath,
+    content: text,
+    lines,
+    vendor: detectVendor(text),
+    size: text.length,
+    lineCount: lines.length
+  };
+}
+
+function addDeviceNameSuffixes(){
+  const seen = new Map();
+  for (const d of devices){
+    const n = seen.get(d.name);
+    if (n){ d.displayName = d.name + ' (' + (d.folder || d.filename) + ')'; n.dup = true; }
+    else { d.displayName = d.name; }
+    seen.set(d.name, d);
+  }
+}
+
+async function addFiles(fileList){
+  const arr = Array.from(fileList || []);
+  if (!arr.length) return;
+  skippedFiles = [];
+  $('loading').style.display = 'block';
+  const loaded = await Promise.all(arr.map(f => new Promise(res => {
+    const r = new FileReader();
+    r.onload = () => res({ file: f, text: r.result });
+    r.onerror = () => res({ file: f, text: null });
+    r.readAsText(f);
+  })));
+  for (const { file, text } of loaded){
+    const rel = file.webkitRelativePath || file.name;
+    if (text == null){ skippedFiles.push(rel + ' (read error)'); continue; }
+    if (isProbablyBinary(text)){ skippedFiles.push(rel + ' (skipped: not a text file)'); continue; }
+    if (file.size > 20 * 1024 * 1024){ skippedFiles.push(rel + ' (skipped: larger than 20 MB)'); continue; }
+    devices.push(makeDevice(text, rel));
+  }
+  addDeviceNameSuffixes();
+  $('loading').style.display = 'none';
+  runSearch();
+  render();
+}
+
+/* ---------------- drag & drop (folders included) ---------------- */
+function collectFromEntries(entries, prefix, out){
+  return Promise.all(entries.map(entry => new Promise(res => {
+    if (entry.isFile){
+      entry.file(f => {
+        try { Object.defineProperty(f, 'webkitRelativePath', { value: prefix + entry.name }); } catch (e) {}
+        out.push(f);
+        res();
+      }, () => res());
+    } else if (entry.isDirectory){
+      const reader = entry.createReader();
+      const readAll = () => reader.readEntries(async subs => {
+        if (!subs.length) return res();
+        await collectFromEntries(subs, prefix + entry.name + '/', out);
+        readAll();
+      }, () => res());
+      readAll();
+    } else res();
+  })));
+}
+
+document.addEventListener('dragover', e => { e.preventDefault(); $('dropOverlay').classList.add('show'); });
+document.addEventListener('dragleave', e => { if (!e.relatedTarget) $('dropOverlay').classList.remove('show'); });
+document.addEventListener('drop', async e => {
+  e.preventDefault();
+  $('dropOverlay').classList.remove('show');
+  const items = Array.from(e.dataTransfer.items || []);
+  const entries = items.map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (entries.length){
+    const files = [];
+    await collectFromEntries(entries, '', files);
+    addFiles(files);
+  } else if (e.dataTransfer.files.length){
+    addFiles(e.dataTransfer.files);
+  }
+});
+
+/* ---------------- search ---------------- */
+function buildRegex(){
+  const flags = $('caseToggle').checked ? 'g' : 'gi';
+  const src = $('regexToggle').checked ? activeQuery : escRe(activeQuery);
+  try { return new RegExp(src, flags); } catch (e) { return null; }
+}
+
+function findMatchesInLine(line, re){
+  re.lastIndex = 0;
+  const out = [];
+  let m;
+  while ((m = re.exec(line))){
+    if (m[0].length === 0){ re.lastIndex++; continue; }
+    out.push({ col: m.index, len: m[0].length });
+    if (out.length >= 500) break;
+  }
+  return out;
+}
+
+const MAX_MATCHES_PER_DEVICE = 5000;
+
+function runSearch(){
+  activeQuery = $('searchBox').value.trim();
+  searchResults = null;
+  if (!activeQuery){ render(); return; }
+  const re = buildRegex();
+  if (!re){ render(); return; }
+  const nameRe = new RegExp(re.source, re.flags.replace('g', ''));
+  searchResults = new Map();
+  for (const d of devices){
+    const matches = [];
+    let capped = false;
+    for (let i = 0; i < d.lines.length; i++){
+      for (const m of findMatchesInLine(d.lines[i], re)){
+        matches.push({ line: i, col: m.col, len: m.len });
+        if (matches.length >= MAX_MATCHES_PER_DEVICE){ capped = true; break; }
+      }
+      if (capped) break;
+    }
+    const nameMatch = nameRe.test(d.name) || nameRe.test(d.filename);
+    if (matches.length || nameMatch) searchResults.set(d.id, { matches, nameMatch, capped });
+  }
+  render();
+}
+
+let searchTimer = null;
+$('searchBox').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(runSearch, 200);
+});
+$('searchBox').addEventListener('keydown', e => {
+  if (e.key === 'Enter'){
+    e.preventDefault();
+    if (searchResults && searchResults.size){
+      const first = devices.find(d => searchResults.has(d.id));
+      if (first) openDevice(first.id, 0);
+    }
+  } else if (e.key === 'Escape'){
+    $('searchBox').value = '';
+    runSearch();
+  }
+});
+$('caseToggle').addEventListener('change', runSearch);
+$('regexToggle').addEventListener('change', runSearch);
+
+/* ---------------- rendering: list ---------------- */
+function fmtSize(n){
+  return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB'
+       : n >= 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B';
+}
+
+function statsText(){
+  if (!devices.length) return 'No configurations loaded.';
+  const folders = new Set(devices.map(d => d.folder).filter(Boolean));
+  let t = `<b>${devices.length}</b> device${devices.length !== 1 ? 's' : ''}` +
+          (folders.size ? ` · <b>${folders.size}</b> folder${folders.size !== 1 ? 's' : ''}` : '');
+  if (skippedFiles.length) t += ` · ${skippedFiles.length} file(s) skipped`;
+  if (activeQuery && searchResults){
+    let total = 0;
+    searchResults.forEach(r => total += r.matches.length);
+    t = `<b>${searchResults.size}</b> of <b>${devices.length}</b> devices match &quot;${esc(activeQuery)}&quot; · <b>${total}</b> occurrence${total !== 1 ? 's' : ''}` +
+        (t.includes('skipped') ? ' · ' + skippedFiles.length + ' file(s) skipped' : '');
+  }
+  return t;
+}
+
+function deviceCard(d, result){
+  const el = document.createElement('div');
+  el.className = 'device-card';
+  const count = result ? result.matches.length : 0;
+  el.innerHTML =
+    '<div style="flex:1;min-width:0">' +
+      '<div class="dname">' + esc(d.displayName) + '</div>' +
+      '<div class="dpath">' + esc(d.path) + '</div>' +
+    '</div>' +
+    '<span class="chip">' + esc(d.vendor) + '</span>' +
+    '<span class="dmeta">' + d.lineCount + ' lines · ' + fmtSize(d.size) + '</span>' +
+    (result
+      ? (count
+          ? '<span class="badge">' + count + ' match' + (count !== 1 ? 'es' : '') + '</span>'
+          : '<span class="badge warn">name only</span>')
+      : '');
+  el.addEventListener('click', ev => {
+    if (ev.target.closest('.snippet')) return;
+    openDevice(d.id, 0);
+  });
+  if (result && count){
+    const wrap = document.createElement('div');
+    wrap.style.flexBasis = '100%';
+    const sn = document.createElement('div');
+    sn.className = 'snippets';
+    for (const m of result.matches.slice(0, 3)){
+      const s = document.createElement('div');
+      s.className = 'snippet';
+      s.innerHTML = '<span class="lnum">L' + (m.line + 1) + '</span>' + highlightText(d.lines[m.line], [{ col: m.col, len: m.len, idx: -1 }]);
+      s.addEventListener('click', () => openDevice(d.id, result.matches.indexOf(m)));
+      sn.appendChild(s);
+    }
+    if (result.matches.length > 3){
+      const more = document.createElement('div');
+      more.className = 'snippet';
+      more.style.fontStyle = 'italic';
+      more.textContent = '… and ' + (result.matches.length - 3) + ' more matches';
+      more.addEventListener('click', () => openDevice(d.id, 0));
+      sn.appendChild(more);
+    }
+    wrap.appendChild(sn);
+    el.appendChild(wrap);
+    el.style.flexWrap = 'wrap';
+  }
+  return el;
+}
+
+function renderList(){
+  const root = $('listView');
+  root.innerHTML = '';
+  if (!devices.length){
+    root.innerHTML =
+      '<div class="empty"><div class="big">📂</div>' +
+      '<div><b>Load configuration backups to begin</b></div>' +
+      '<div style="margin-top:8px">Use <b>Add files</b> / <b>Add folder</b> above, or drag &amp; drop files or whole folder trees here.<br>' +
+      'Nested folders are fully supported. Everything stays local in your browser — nothing is uploaded.</div></div>';
+    return;
+  }
+  if (activeQuery && searchResults){
+    if (!searchResults.size){
+      root.innerHTML = '<div class="empty"><div class="big">🔍</div>No device configuration matches <b>&quot;' +
+        esc(activeQuery) + '&quot;</b>.</div>';
+      return;
+    }
+    const sorted = devices.filter(d => searchResults.has(d.id))
+      .sort((a, b) => searchResults.get(b.id).matches.length - searchResults.get(a.id).matches.length);
+    const box = document.createElement('div');
+    box.className = 'group-body';
+    for (const d of sorted) box.appendChild(deviceCard(d, searchResults.get(d.id)));
+    root.appendChild(box);
+    return;
+  }
+  const groups = new Map();
+  for (const d of devices){
+    const key = d.folder || '(root)';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(d);
+  }
+  const keys = [...groups.keys()].sort();
+  for (const key of keys){
+    const det = document.createElement('details');
+    det.className = 'group';
+    det.open = keys.length <= 8;
+    const sum = document.createElement('summary');
+    sum.innerHTML = '<span class="chev">▶</span> 📁 ' + esc(key) +
+      ' <span class="dmeta">(' + groups.get(key).length + ')</span>';
+    det.appendChild(sum);
+    const body = document.createElement('div');
+    body.className = 'group-body';
+    for (const d of groups.get(key).sort((a, b) => a.name.localeCompare(b.name)))
+      body.appendChild(deviceCard(d, null));
+    det.appendChild(body);
+    root.appendChild(det);
+  }
+}
+
+/* ---------------- rendering: device view ---------------- */
+function highlightText(text, lineMatches){
+  if (!lineMatches || !lineMatches.length) return esc(text) || '&nbsp;';
+  lineMatches = lineMatches.slice().sort((a, b) => a.col - b.col);
+  let html = '', pos = 0;
+  for (const m of lineMatches){
+    if (m.col < pos) continue;
+    html += esc(text.slice(pos, m.col));
+    const inner = esc(text.substr(m.col, m.len));
+    html += (m.idx >= 0)
+      ? '<mark id="m-' + m.idx + '">' + inner + '</mark>'
+      : '<mark>' + inner + '</mark>';
+    pos = m.col + m.len;
+  }
+  html += esc(text.slice(pos));
+  return html || '&nbsp;';
+}
+
+function renderDevice(d, matches){
+  currentDevice = d;
+  currentMatches = matches || [];
+  currentMatchIdx = -1;
+  $('listView').hidden = true;
+  $('deviceView').hidden = false;
+  $('dvName').textContent = d.displayName;
+  $('dvSub').textContent = d.path + ' · ' + d.vendor + ' · ' + d.lineCount + ' lines · ' + fmtSize(d.size);
+  const nav = $('matchNav');
+  if (currentMatches.length){
+    nav.hidden = false;
+    const byLine = new Map();
+    currentMatches.forEach((m, idx) => {
+      m.idx = idx;
+      if (!byLine.has(m.line)) byLine.set(m.line, []);
+      byLine.get(m.line).push(m);
+    });
+    const parts = [];
+    for (let i = 0; i < d.lines.length; i++){
+      const lm = byLine.get(i);
+      parts.push('<div class="cl"><span class="ln">' + (i + 1) + '</span><span class="lc">' +
+        highlightText(d.lines[i], lm) + '</span></div>');
+    }
+    $('configEl').innerHTML = parts.join('');
+    jumpToMatch(0);
+  } else {
+    nav.hidden = true;
+    $('matchCounter').textContent = '';
+    const parts = [];
+    for (let i = 0; i < d.lines.length; i++){
+      parts.push('<div class="cl"><span class="ln">' + (i + 1) + '</span><span class="lc">' +
+        (esc(d.lines[i]) || '&nbsp;') + '</span></div>');
+    }
+    $('configEl').innerHTML = parts.join('');
+  }
+  $('configEl').scrollTop = 0;
+}
+
+function jumpToMatch(idx){
+  if (!currentMatches.length) return;
+  const n = currentMatches.length;
+  const next = ((idx % n) + n) % n;
+  const prevEl = document.querySelector('.config mark.active');
+  if (prevEl) prevEl.classList.remove('active');
+  currentMatchIdx = next;
+  const el = document.getElementById('m-' + next);
+  if (el){
+    el.classList.add('active');
+    el.scrollIntoView({ block: 'center' });
+  }
+  $('matchCounter').textContent = 'Match ' + (next + 1) + ' / ' + n;
+}
+
+function openDevice(id, matchIdx){
+  const d = devices.find(x => x.id === id);
+  if (!d) return;
+  const result = searchResults && searchResults.get(id);
+  const matches = (activeQuery && result && result.matches.length) ? result.matches : [];
+  renderDevice(d, matches);
+  if (matches.length) jumpToMatch(matchIdx || 0);
+  window.scrollTo(0, 0);
+}
+
+function closeDevice(){
+  view = 'list';
+  currentDevice = null;
+  $('deviceView').hidden = true;
+  $('listView').hidden = false;
+  render();
+}
+
+/* ---------------- global controls ---------------- */
+function render(){
+  $('statsBar').innerHTML = statsText();
+  renderList();
+}
+
+$('pickFiles').addEventListener('click', () => $('fileInput').click());
+$('pickFolder').addEventListener('click', () => $('folderInput').click());
+$('fileInput').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+$('folderInput').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+$('clearAll').addEventListener('click', () => {
+  devices.length = 0;
+  skippedFiles = [];
+  searchResults = null;
+  $('searchBox').value = '';
+  activeQuery = '';
+  closeDevice();
+});
+$('backBtn').addEventListener('click', closeDevice);
+$('nextBtn').addEventListener('click', () => jumpToMatch(currentMatchIdx + 1));
+$('prevBtn').addEventListener('click', () => jumpToMatch(currentMatchIdx - 1));
+
+document.addEventListener('keydown', e => {
+  if (view !== 'device' || !currentMatches.length) return;
+  if (e.key === 'F3' || (e.key === 'Enter' && e.target.tagName !== 'INPUT')){
+    e.preventDefault();
+    jumpToMatch(currentMatchIdx + (e.shiftKey ? -1 : 1));
+  }
+});
+
+render();
+</script>
+</body>
+</html>
