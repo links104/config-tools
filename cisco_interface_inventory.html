@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cisco Interface Inventory Extractor</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --line:#334155; --txt:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Segoe UI", Arial, sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:18px 24px; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 4px; font-size:20px; }
+  header p { margin:0; color:var(--muted); font-size:13px; }
+  .controls { padding:16px 24px; display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  button { background:var(--accent); color:#0f172a; border:none; padding:9px 18px; border-radius:6px;
+           font-weight:600; cursor:pointer; font-size:14px; }
+  button.secondary { background:var(--panel); color:var(--txt); border:1px solid var(--line); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  #fileInput { color:var(--muted); }
+  textarea { width:calc(100% - 48px); height:180px; margin:0 24px; background:var(--panel);
+             color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:12px;
+             font-family:Consolas, monospace; font-size:12px; resize:vertical; }
+  .summary { padding:12px 24px; color:var(--muted); font-size:13px; }
+  .tablewrap { margin:0 24px 32px; overflow:auto; max-height:70vh; border:1px solid var(--line); border-radius:6px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  thead th { position:sticky; top:0; background:#263449; color:var(--accent); text-align:left;
+             padding:10px 12px; border-bottom:2px solid var(--line); white-space:nowrap; z-index:1; }
+  tbody td { padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  tbody tr:hover { background:#243247; }
+  tr.si td:first-child { padding-left:28px; color:var(--muted); }
+  td.mono { font-family:Consolas, monospace; }
+  .tag { display:inline-block; background:#334155; color:var(--txt); border-radius:4px;
+         padding:1px 7px; font-size:11px; margin-left:6px; }
+  .desc { color:var(--muted); font-size:11px; display:block; max-width:420px; white-space:normal; }
+  @media print {
+    body { background:#fff; color:#000; }
+    .controls, textarea, button { display:none; }
+    .tablewrap { max-height:none; overflow:visible; border:none; }
+    thead th { background:#eee; color:#000; }
+    tbody td { border-bottom:1px solid #ccc; }
+    tr.si td:first-child { color:#555; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cisco Interface Inventory Extractor</h1>
+  <p>Paste a Cisco IOS / IOS-XE running-config (or load it from a file), then extract a tabular interface inventory:
+     physical ports, sub-interfaces, virtual interfaces (Loopback / Tunnel / BDI / SVI) and every service instance.</p>
+</header>
+
+<div class="controls">
+  <input type="file" id="fileInput" accept=".txt,.cfg,.log,.conf">
+  <button id="parseBtn">Extract Inventory</button>
+  <button id="csvBtn" class="secondary" disabled>Download CSV</button>
+  <button id="printBtn" class="secondary" disabled>Print / PDF</button>
+  <input type="text" id="filter" placeholder="Filter rows (interface, VLAN, VRF, BD...)"
+         style="flex:1; min-width:220px; background:var(--panel); color:var(--txt);
+                border:1px solid var(--line); border-radius:6px; padding:9px 12px;">
+</div>
+
+<textarea id="config" placeholder="Paste 'show running-config' output here..."></textarea>
+
+<div class="summary" id="summary"></div>
+
+<div class="tablewrap">
+  <table id="inventory">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Hostname</th>
+        <th>Host IP Address</th>
+        <th>Interface</th>
+        <th>Type</th>
+        <th>Interface VLAN</th>
+        <th>Encapsulation</th>
+        <th>VRF</th>
+        <th>Interface IPv4 Address</th>
+        <th>Interface IPv6 Address</th>
+        <th>Bridge Domain</th>
+        <th>Xconnect (EoMPLS)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script>
+function parseCiscoConfig(text) {
+  const lines = text.split(/\r?\n/);
+  const result = { hostname: '', hostIp: '', hostIpv6: '', interfaces: [] };
+  let cur = null;
+  let curSi = null;
+
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, '');
+
+    const mIf = line.match(/^interface\s+(\S+)\s*$/);
+    if (mIf) {
+      cur = { name: mIf[1], description: '', vrf: '', ipv4: [], ipv6: [], services: [] };
+      curSi = null;
+      result.interfaces.push(cur);
+      continue;
+    }
+
+    if (!cur) {
+      const mh = line.match(/^hostname\s+(\S+)/);
+      if (mh) result.hostname = mh[1];
+      continue;
+    }
+
+    if (/^\S/.test(line)) { cur = null; curSi = null; continue; }
+    if (line === '!' || line === '') continue;
+
+    const mSi = line.match(/^\s+service instance (\d+)\s+(\S+)/);
+    if (mSi) {
+      curSi = { id: mSi[1], type: mSi[2], description: '', encapsulation: '',
+                rewrite: '', bridgeDomain: '', xconnect: '' };
+      cur.services.push(curSi);
+      continue;
+    }
+
+    let m;
+    if (curSi) {
+      if ((m = line.match(/^\s+description\s+(.*)$/))) { curSi.description = m[1].trim(); continue; }
+      if ((m = line.match(/^\s+encapsulation\s+(.+)$/))) { curSi.encapsulation = m[1].trim(); continue; }
+      if ((m = line.match(/^\s+rewrite ingress tag\s+(.+)$/))) { curSi.rewrite = m[1].trim(); continue; }
+      if ((m = line.match(/^\s+bridge-domain\s+(\S+)/))) { curSi.bridgeDomain = m[1]; continue; }
+      if ((m = line.match(/^\s+xconnect\s+(\S+)\s+(\S+)/))) { curSi.xconnect = m[1] + ' vc-id ' + m[2]; continue; }
+      continue;
+    }
+
+    if ((m = line.match(/^\s+description\s+(.*)$/))) { cur.description = m[1].trim(); continue; }
+    if ((m = line.match(/^\s+(?:ip )?vrf forwarding\s+(\S+)/))) { cur.vrf = m[1]; continue; }
+    if ((m = line.match(/^\s+ip address\s+(\d+\.\d+\.\d+\.\d+\s+\d+\.\d+\.\d+\.\d+)(?:\s+\S+)?$/))) {
+      cur.ipv4.push(m[1].trim());
+      continue;
+    }
+    if ((m = line.match(/^\s+ipv6 address\s+(\S+)/))) { cur.ipv6.push(m[1]); continue; }
+  }
+
+  const lo0 = result.interfaces.find(i => /^Loopback0$/i.test(i.name));
+  if (lo0) {
+    result.hostIp = lo0.ipv4[0] || '';
+    result.hostIpv6 = lo0.ipv6[0] || '';
+  }
+  return result;
+}
+
+function deriveVlan(si) {
+  const tr = si.rewrite.match(/translate 1-to-1 dot1q (\d+)/);
+  if (tr) return tr[1] + ' (translated)';
+  const pu = si.rewrite.match(/push dot1q (\d+)/);
+  if (pu) return pu[1] + ' (pushed)';
+  const en = si.encapsulation.match(/^dot1q\s+(\d+)(?:\s+second-dot1q\s+(\d+))?/);
+  if (en) return en[2] ? en[1] + '.' + en[2] + ' (qinq)' : en[1];
+  return '';
+}
+
+function interfaceKind(name) {
+  if (name.includes('.')) return 'sub-interface';
+  if (/^Loopback/i.test(name)) return 'virtual (loopback)';
+  if (/^Tunnel/i.test(name)) return 'virtual (tunnel)';
+  if (/^BDI/i.test(name)) return 'virtual (BDI)';
+  if (/^Vlan/i.test(name)) return 'virtual (SVI)';
+  if (/^Port-channel/i.test(name)) return 'virtual (port-channel)';
+  if (/^NVE/i.test(name)) return 'virtual (NVE)';
+  return 'physical';
+}
+
+function buildRows(parsed) {
+  const rows = [];
+  for (const intf of parsed.interfaces) {
+    rows.push({
+      hostname: parsed.hostname,
+      hostIp: parsed.hostIp,
+      interface: intf.name,
+      kind: interfaceKind(intf.name),
+      description: intf.description,
+      vlan: '',
+      encapsulation: '',
+      vrf: intf.vrf,
+      ipv4: intf.ipv4.join(' '),
+      ipv6: intf.ipv6.join(' '),
+      bridgeDomain: '',
+      xconnect: ''
+    });
+    for (const si of intf.services) {
+      rows.push({
+        hostname: parsed.hostname,
+        hostIp: parsed.hostIp,
+        interface: intf.name + ' \u2014 service instance ' + si.id,
+        kind: 'service instance',
+        description: si.description,
+        vlan: deriveVlan(si),
+        encapsulation: si.encapsulation,
+        vrf: '',
+        ipv4: '',
+        ipv6: '',
+        bridgeDomain: si.bridgeDomain,
+        xconnect: si.xconnect
+      });
+    }
+  }
+  return rows;
+}
+
+const $ = id => document.getElementById(id);
+let allRows = [];
+
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function render(rows) {
+  const tbody = $('inventory').querySelector('tbody');
+  tbody.innerHTML = '';
+  rows.forEach((r, idx) => {
+    const tr = document.createElement('tr');
+    if (r.kind === 'service instance') tr.className = 'si';
+    const ifaceCell = esc(r.interface) +
+      (r.description ? '<span class="desc">' + esc(r.description) + '</span>' : '');
+    tr.innerHTML =
+      '<td>' + (idx + 1) + '</td>' +
+      '<td>' + esc(r.hostname) + '</td>' +
+      '<td class="mono">' + esc(r.hostIp) + '</td>' +
+      '<td class="mono">' + ifaceCell + '</td>' +
+      '<td>' + esc(r.kind) + '</td>' +
+      '<td class="mono">' + esc(r.vlan) + '</td>' +
+      '<td class="mono">' + esc(r.encapsulation) + '</td>' +
+      '<td>' + (r.vrf ? '<span class="tag">' + esc(r.vrf) + '</span>' : '') + '</td>' +
+      '<td class="mono">' + esc(r.ipv4) + '</td>' +
+      '<td class="mono">' + esc(r.ipv6) + '</td>' +
+      '<td class="mono">' + esc(r.bridgeDomain) + '</td>' +
+      '<td class="mono">' + esc(r.xconnect) + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function doParse() {
+  const text = $('config').value;
+  if (!text.trim()) { alert('Paste a configuration or load a file first.'); return; }
+  const parsed = parseCiscoConfig(text);
+  allRows = buildRows(parsed);
+  render(allRows);
+  const siCount = allRows.filter(r => r.kind === 'service instance').length;
+  $('summary').textContent = parsed.hostname
+    ? 'Hostname: ' + parsed.hostname + '  |  Host IP: ' + parsed.hostIp +
+      '  |  Interfaces: ' + (allRows.length - siCount) + '  |  Service instances: ' + siCount +
+      '  |  Total rows: ' + allRows.length
+    : 'No hostname found - is this a Cisco running-config?  Rows: ' + allRows.length;
+  $('csvBtn').disabled = false;
+  $('printBtn').disabled = false;
+}
+
+function applyFilter() {
+  const q = $('filter').value.trim().toLowerCase();
+  if (!q) { render(allRows); return; }
+  render(allRows.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(q))));
+}
+
+function downloadCsv() {
+  const header = ['Hostname', 'Host IP Address', 'Interface', 'Type', 'Interface VLAN',
+                  'Encapsulation', 'VRF', 'Interface IPv4 Address', 'Interface IPv6 Address',
+                  'Bridge Domain', 'Xconnect (EoMPLS)'];
+  const q = v => '"' + String(v).replace(/"/g, '""') + '"';
+  const lines = [header.join(',')];
+  allRows.forEach(r => lines.push([r.hostname, r.hostIp, r.interface, r.kind, r.vlan,
+    r.encapsulation, r.vrf, r.ipv4, r.ipv6, r.bridgeDomain, r.xconnect].map(q).join(',')));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'interface-inventory.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$('parseBtn').addEventListener('click', doParse);
+$('filter').addEventListener('input', applyFilter);
+$('csvBtn').addEventListener('click', downloadCsv);
+$('printBtn').addEventListener('click', () => window.print());
+$('fileInput').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => { $('config').value = ev.target.result; doParse(); };
+  reader.readAsText(f);
+});
+</script>
+</body>
+</html>
